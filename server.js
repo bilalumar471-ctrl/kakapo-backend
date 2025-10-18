@@ -9,7 +9,7 @@ app.use(express.json({ limit: '50mb' }));
 
 const projectId = 'kakapo-chat-bot'; // Replace with your project ID
 const sessionClient = new dialogflow.SessionsClient({
-  keyFilename: './service-account-key.json' // We'll add this file next
+  credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON || '{}')
 });
 
 app.post('/chat', async (req, res) => {
