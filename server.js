@@ -49,8 +49,33 @@ app.post('/chat', async (req, res) => {
     const responses = await sessionClient.detectIntent(request);
     const result = responses[0].queryResult;
 
+    // Extract text response
+    let responseText = result.fulfillmentText;
+    let imageUrl = null;
+
+    // Check for images in fulfillment messages
+    if (result.fulfillmentMessages && result.fulfillmentMessages.length > 0) {
+      for (const message of result.fulfillmentMessages) {
+        // Check for image message type
+        if (message.image && message.image.imageUri) {
+          imageUrl = message.image.imageUri;
+        }
+        // Check for custom payload with image_url
+        if (message.payload && message.payload.fields) {
+          if (message.payload.fields.image_url) {
+            imageUrl = message.payload.fields.image_url.stringValue;
+          }
+        }
+        // Also check for card with image
+        if (message.card && message.card.imageUri) {
+          imageUrl = message.card.imageUri;
+        }
+      }
+    }
+
     res.json({
-      response: result.fulfillmentText,
+      message: responseText,
+      image_url: imageUrl,
       intent: result.intent.displayName
     });
   } catch (error) {
