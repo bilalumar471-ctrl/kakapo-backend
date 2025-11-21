@@ -12,6 +12,7 @@
   "dependencies": {
     "@google-cloud/dialogflow": "^7.2.1",
     "@google/generative-ai": "^0.21.0",
+    "@google/genai": "^0.1.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0"
