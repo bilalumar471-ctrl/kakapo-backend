@@ -40,9 +40,15 @@ function isQuizActive(sessionId) {
 }
 
 // Generate quiz questions using Gemini
+// Generate quiz questions using Gemini
 async function generateQuizQuestions() {
+  console.log('=== QUIZ GENERATION START ===');
+  console.log('GEMINI_API_KEY exists:', !!process.env.GEMINI_API_KEY);
+  console.log('GEMINI_API_KEY length:', process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.length : 0);
+  
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    console.log('Gemini model initialized');
     
     const prompt = `Generate exactly 10 multiple choice questions about Kakapo birds (New Zealand parrots).
 
@@ -70,25 +76,36 @@ Format as a JSON array exactly like this:
 
 Generate exactly 10 questions now in this format:`;
 
+    console.log('Sending request to Gemini...');
     const result = await model.generateContent(prompt);
+    console.log('Gemini response received');
+    
     const response = await result.response;
     let text = response.text();
     
-    // Clean up the response - remove markdown code blocks if present
+    console.log('Raw response length:', text.length);
+    console.log('First 200 chars:', text.substring(0, 200));
+    
+    // Clean up the response
     text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     
     // Parse JSON
     const questions = JSON.parse(text);
+    console.log('Parsed questions count:', questions.length);
     
-    // Validate we have 10 questions
     if (!Array.isArray(questions) || questions.length !== 10) {
-      throw new Error('Invalid number of questions generated');
+      throw new Error('Invalid number of questions: ' + questions.length);
     }
     
+    console.log('=== QUIZ GENERATION SUCCESS ===');
     return questions;
+    
   } catch (error) {
-    console.error('Error generating quiz questions:', error);
-    // Return fallback questions if Gemini fails
+    console.error('=== QUIZ GENERATION FAILED ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Full error:', error);
+    console.log('Returning fallback questions');
     return getFallbackQuestions();
   }
 }
