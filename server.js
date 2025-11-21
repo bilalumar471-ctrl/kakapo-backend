@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dialogflow = require('@google-cloud/dialogflow');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenAI } = require('@google/genai');
 const fs = require('fs');
 
 const app = express();
@@ -10,13 +10,12 @@ app.use(express.json({ limit: '50mb' }));
 
 const projectId = 'kakapo-chat-bot';
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'YOUR_GEMINI_API_KEY');
+// Initialize NEW Gemini AI SDK
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // In-memory storage for quiz sessions
 const quizSessions = {};
 
-// Check if running on Render (secret file) or locally
 const credentialsPath = process.env.RENDER 
   ? '/etc/secrets/service-account-key.json'
   : './service-account-key.json';
@@ -25,30 +24,22 @@ let sessionClient;
 
 if (fs.existsSync(credentialsPath)) {
   console.log('Using credentials from file:', credentialsPath);
-  sessionClient = new dialogflow.SessionsClient({
-    keyFilename: credentialsPath
-  });
+  sessionClient = new dialogflow.SessionsClient({ keyFilename: credentialsPath });
 } else {
   console.error('Credentials file not found at:', credentialsPath);
   process.exit(1);
 }
 
-// Helper function to check if quiz is active
 function isQuizActive(sessionId) {
   return quizSessions[sessionId] && quizSessions[sessionId].active;
 }
 
-// Generate quiz questions using Gemini
+// Generate quiz questions using NEW Gemini SDK
 async function generateQuizQuestions() {
   console.log('=== QUIZ GENERATION START ===');
   console.log('GEMINI_API_KEY exists:', !!process.env.GEMINI_API_KEY);
-  console.log('GEMINI_API_KEY length:', process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.length : 0);
   
   try {
-    // Use gemini-1.5-flash model (more reliable)
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    console.log('Gemini model initialized: gemini-1.5-flash');
-    
     const prompt = `Generate exactly 10 multiple choice questions about Kakapo birds (New Zealand parrots).
 
 Rules:
@@ -73,28 +64,25 @@ Format as a JSON array exactly like this:
   }
 ]
 
-Generate exactly 10 questions now in this format:`;
+Generate exactly 10 questions now:`;
 
-    console.log('Sending request to Gemini...');
-    const result = await model.generateContent(prompt);
-    console.log('Gemini response received');
+    console.log('Sending request to Gemini 2.5 Flash...');
     
-    const response = await result.response;
-    let text = response.text();
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt
+    });
     
-    console.log('Raw response length:', text.length);
-    console.log('First 300 chars:', text.substring(0, 300));
+    let text = response.text;
+    console.log('Response received, length:', text.length);
     
-    // Clean up the response - remove markdown code blocks if present
+    // Clean up response
     text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     
-    // Parse JSON
     const questions = JSON.parse(text);
-    console.log('Parsed questions count:', questions.length);
     
-    // Validate we have 10 questions
     if (!Array.isArray(questions) || questions.length !== 10) {
-      throw new Error('Invalid number of questions generated: ' + questions.length);
+      throw new Error('Invalid number of questions: ' + questions.length);
     }
     
     console.log('=== QUIZ GENERATION SUCCESS ===');
@@ -102,81 +90,26 @@ Generate exactly 10 questions now in this format:`;
     
   } catch (error) {
     console.error('=== QUIZ GENERATION FAILED ===');
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    console.error('Full error:', error);
-    console.log('Returning fallback questions');
+    console.error('Error:', error.message);
     return getFallbackQuestions();
   }
 }
 
-// Fallback questions in case Gemini fails
 function getFallbackQuestions() {
   return [
-    {
-      question: "What is the Kakapo?",
-      options: { A: "A type of owl", B: "A flightless parrot", C: "A bat species", D: "A lizard" },
-      correct_answer: "B",
-      explanation: "The Kakapo is the world's only flightless parrot, native to New Zealand."
-    },
-    {
-      question: "Where are Kakapos found in the wild?",
-      options: { A: "Australia", B: "New Zealand", C: "Hawaii", D: "Madagascar" },
-      correct_answer: "B",
-      explanation: "Kakapos are endemic to New Zealand and found nowhere else in the wild."
-    },
-    {
-      question: "What do Kakapos primarily eat?",
-      options: { A: "Fish and seafood", B: "Small mammals", C: "Plants, fruits, and seeds", D: "Insects only" },
-      correct_answer: "C",
-      explanation: "Kakapos are herbivores that feed on native plants, fruits, seeds, and pollen."
-    },
-    {
-      question: "How do male Kakapos attract females?",
-      options: { A: "By building nests", B: "By booming sounds from bowl-shaped depressions", C: "By colorful displays", D: "By dancing" },
-      correct_answer: "B",
-      explanation: "Male Kakapos create bowl-shaped depressions and emit deep booming calls."
-    },
-    {
-      question: "What is the conservation status of Kakapos?",
-      options: { A: "Least Concern", B: "Endangered", C: "Critically Endangered", D: "Extinct in the wild" },
-      correct_answer: "C",
-      explanation: "Kakapos are Critically Endangered with fewer than 250 individuals remaining."
-    },
-    {
-      question: "When are Kakapos most active?",
-      options: { A: "During the day", B: "At dawn", C: "At night (nocturnal)", D: "At dusk only" },
-      correct_answer: "C",
-      explanation: "Kakapos are nocturnal birds, being most active during the night."
-    },
-    {
-      question: "What is the main threat to Kakapo survival?",
-      options: { A: "Climate change only", B: "Introduced predators like stoats and cats", C: "Disease", D: "Habitat loss only" },
-      correct_answer: "B",
-      explanation: "Introduced predators are the biggest threat as Kakapos evolved without natural predators."
-    },
-    {
-      question: "How much does an adult Kakapo weigh?",
-      options: { A: "500 grams", B: "1 kilogram", C: "2-4 kilograms", D: "10 kilograms" },
-      correct_answer: "C",
-      explanation: "Adult Kakapos typically weigh between 2-4 kg."
-    },
-    {
-      question: "How long can Kakapos live?",
-      options: { A: "10-20 years", B: "30-40 years", C: "60-90 years", D: "Over 100 years" },
-      correct_answer: "C",
-      explanation: "Kakapos can live 60-90 years or more."
-    },
-    {
-      question: "Why can't Kakapos fly?",
-      options: { A: "They are too heavy", B: "They evolved without predators and didn't need flight", C: "Their wings are damaged", D: "They prefer walking" },
-      correct_answer: "B",
-      explanation: "Kakapos evolved in New Zealand without natural predators, so they lost the ability to fly."
-    }
+    { question: "What is the Kakapo?", options: { A: "A type of owl", B: "A flightless parrot", C: "A bat species", D: "A lizard" }, correct_answer: "B", explanation: "The Kakapo is the world's only flightless parrot, native to New Zealand." },
+    { question: "Where are Kakapos found in the wild?", options: { A: "Australia", B: "New Zealand", C: "Hawaii", D: "Madagascar" }, correct_answer: "B", explanation: "Kakapos are endemic to New Zealand." },
+    { question: "What do Kakapos primarily eat?", options: { A: "Fish", B: "Small mammals", C: "Plants, fruits, and seeds", D: "Insects only" }, correct_answer: "C", explanation: "Kakapos are herbivores." },
+    { question: "How do male Kakapos attract females?", options: { A: "Building nests", B: "Booming sounds", C: "Colorful displays", D: "Dancing" }, correct_answer: "B", explanation: "Males create bowl-shaped depressions and emit booming calls." },
+    { question: "What is the conservation status of Kakapos?", options: { A: "Least Concern", B: "Endangered", C: "Critically Endangered", D: "Extinct" }, correct_answer: "C", explanation: "Kakapos are Critically Endangered." },
+    { question: "When are Kakapos most active?", options: { A: "Day", B: "Dawn", C: "Night", D: "Dusk" }, correct_answer: "C", explanation: "Kakapos are nocturnal." },
+    { question: "Main threat to Kakapos?", options: { A: "Climate change", B: "Introduced predators", C: "Disease", D: "Habitat loss" }, correct_answer: "B", explanation: "Introduced predators are the biggest threat." },
+    { question: "How much does an adult Kakapo weigh?", options: { A: "500g", B: "1kg", C: "2-4kg", D: "10kg" }, correct_answer: "C", explanation: "Adults weigh 2-4 kg." },
+    { question: "How long can Kakapos live?", options: { A: "10-20 years", B: "30-40 years", C: "60-90 years", D: "100+ years" }, correct_answer: "C", explanation: "Kakapos can live 60-90 years." },
+    { question: "Why can't Kakapos fly?", options: { A: "Too heavy", B: "Evolved without predators", C: "Wings damaged", D: "Prefer walking" }, correct_answer: "B", explanation: "They evolved without natural predators." }
   ];
 }
 
-// Format quiz question for display
 function formatQuizQuestion(questionData, questionNum, total) {
   return `🎯 **Question ${questionNum}/${total}**
 
@@ -190,58 +123,50 @@ ${questionData.question}
 Reply with A, B, C, or D! 🦜`;
 }
 
-// Start quiz
 async function handleQuizStart(sessionId) {
   try {
     console.log('Starting quiz for session:', sessionId);
-    
     const questions = await generateQuizQuestions();
     
     quizSessions[sessionId] = {
       active: true,
-      questions: questions,
+      questions,
       currentQuestion: 0,
       score: 0,
       answers: []
     };
     
     const firstQuestion = formatQuizQuestion(questions[0], 1, questions.length);
-    const introText = `🎉 **Welcome to the Kakapo Quiz!** 🦜
-
-Test your knowledge about these amazing flightless parrots! I'll ask you 10 questions.
-
-${firstQuestion}`;
-    
-    return { message: introText, image_url: null, intent: 'quiz.start' };
+    return {
+      message: `🎉 **Welcome to the Kakapo Quiz!** 🦜\n\nTest your knowledge! I'll ask you 10 questions.\n\n${firstQuestion}`,
+      image_url: null,
+      intent: 'quiz.start'
+    };
   } catch (error) {
     console.error('Error starting quiz:', error);
-    return { message: 'Sorry, I encountered an error starting the quiz. Please try again!', image_url: null, intent: 'quiz.error' };
+    return { message: 'Sorry, error starting quiz. Please try again!', image_url: null, intent: 'quiz.error' };
   }
 }
 
-// Handle quiz answer
 function handleQuizAnswer(message, sessionId) {
   const quizData = quizSessions[sessionId];
-  
   if (!quizData || !quizData.active) return null;
   
   const answerMatch = message.trim().toUpperCase().match(/^[ABCD]$/);
   if (!answerMatch) {
-    return { message: '❌ Please answer with A, B, C, or D only!', image_url: null, intent: 'quiz.invalid_answer' };
+    return { message: '❌ Please answer with A, B, C, or D only!', image_url: null, intent: 'quiz.invalid' };
   }
   
   const userAnswer = answerMatch[0];
-  const currentQuestion = quizData.questions[quizData.currentQuestion];
-  const correctAnswer = currentQuestion.correct_answer;
-  const isCorrect = userAnswer === correctAnswer;
+  const currentQ = quizData.questions[quizData.currentQuestion];
+  const isCorrect = userAnswer === currentQ.correct_answer;
   
   if (isCorrect) quizData.score++;
-  
-  quizData.answers.push({ question: currentQuestion.question, userAnswer, correctAnswer, isCorrect });
+  quizData.answers.push({ question: currentQ.question, userAnswer, correctAnswer: currentQ.correct_answer, isCorrect });
   
   let feedback = isCorrect
-    ? `✅ **Correct!** ${currentQuestion.explanation}\n\n`
-    : `❌ **Incorrect.** The correct answer was **${correctAnswer}**. ${currentQuestion.explanation}\n\n`;
+    ? `✅ **Correct!** ${currentQ.explanation}\n\n`
+    : `❌ **Incorrect.** The answer was **${currentQ.correct_answer}**. ${currentQ.explanation}\n\n`;
   
   quizData.currentQuestion++;
   
@@ -249,91 +174,71 @@ function handleQuizAnswer(message, sessionId) {
     return handleQuizComplete(sessionId);
   }
   
-  const nextQuestion = quizData.questions[quizData.currentQuestion];
-  const nextQuestionText = formatQuizQuestion(nextQuestion, quizData.currentQuestion + 1, quizData.questions.length);
-  
-  return { message: feedback + nextQuestionText, image_url: null, intent: 'quiz.answer' };
+  const nextQ = quizData.questions[quizData.currentQuestion];
+  return {
+    message: feedback + formatQuizQuestion(nextQ, quizData.currentQuestion + 1, quizData.questions.length),
+    image_url: null,
+    intent: 'quiz.answer'
+  };
 }
 
-// Complete quiz
 function handleQuizComplete(sessionId) {
   const quizData = quizSessions[sessionId];
   const score = quizData.score;
   const total = quizData.questions.length;
-  const percentage = Math.round((score / total) * 100);
+  const pct = Math.round((score / total) * 100);
   
   let emoji, msg;
-  if (percentage >= 80) { emoji = '🌟'; msg = 'Amazing! You\'re a Kakapo expert!'; }
-  else if (percentage >= 60) { emoji = '💚'; msg = 'Great job! You know your Kakapos well!'; }
-  else if (percentage >= 40) { emoji = '🌿'; msg = 'Good effort! Keep learning about Kakapos!'; }
-  else { emoji = '🦜'; msg = 'Nice try! There\'s so much to learn about Kakapos!'; }
-  
-  const responseText = `🎉 **Quiz Complete!** 🦜
-
-${emoji} You scored **${score}/${total}** (${percentage}%)
-
-${msg}
-
-Would you like to:
-- Take another quiz
-- Learn more about Kakapos
-- Return to main menu`;
+  if (pct >= 80) { emoji = '🌟'; msg = 'Amazing! You\'re a Kakapo expert!'; }
+  else if (pct >= 60) { emoji = '💚'; msg = 'Great job!'; }
+  else if (pct >= 40) { emoji = '🌿'; msg = 'Good effort!'; }
+  else { emoji = '🦜'; msg = 'Nice try!'; }
   
   delete quizSessions[sessionId];
   
-  return { message: responseText, image_url: null, intent: 'quiz.complete' };
+  return {
+    message: `🎉 **Quiz Complete!** 🦜\n\n${emoji} You scored **${score}/${total}** (${pct}%)\n\n${msg}`,
+    image_url: null,
+    intent: 'quiz.complete'
+  };
 }
 
 app.post('/chat', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
-    
     console.log(`Received: "${message}" | Session: ${sessionId}`);
     
-    // Check if user wants to start quiz
     const quizKeywords = ['quiz', 'test', 'take quiz', 'start quiz', 'quiz mode'];
-    const isQuizRequest = quizKeywords.some(keyword => message.toLowerCase().includes(keyword));
+    const isQuizRequest = quizKeywords.some(k => message.toLowerCase().includes(k));
     
     if (isQuizRequest && !isQuizActive(sessionId)) {
-      console.log('Starting quiz...');
-      const quizResponse = await handleQuizStart(sessionId);
-      return res.json(quizResponse);
+      return res.json(await handleQuizStart(sessionId));
     }
     
-    // If quiz is active, handle quiz answer
     if (isQuizActive(sessionId)) {
-      console.log('Handling quiz answer...');
       const quizResponse = handleQuizAnswer(message, sessionId);
       if (quizResponse) return res.json(quizResponse);
     }
     
-    // Normal Dialogflow handling
+    // Dialogflow handling
     const sessionPath = sessionClient.projectAgentSessionPath(projectId, sessionId);
-    const request = {
-      session: sessionPath,
-      queryInput: { text: { text: message, languageCode: 'en' } }
-    };
-
+    const request = { session: sessionPath, queryInput: { text: { text: message, languageCode: 'en' } } };
     const responses = await sessionClient.detectIntent(request);
     const result = responses[0].queryResult;
 
-    let responseText = result.fulfillmentText;
     let imageUrl = null;
-
-    if (result.fulfillmentMessages && result.fulfillmentMessages.length > 0) {
+    if (result.fulfillmentMessages) {
       for (const msg of result.fulfillmentMessages) {
-        if (msg.image && msg.image.imageUri) imageUrl = msg.image.imageUri;
-        if (msg.payload && msg.payload.fields && msg.payload.fields.image_url) {
-          imageUrl = msg.payload.fields.image_url.stringValue;
-        }
-        if (msg.card && msg.card.imageUri) imageUrl = msg.card.imageUri;
+        if (msg.image?.imageUri) imageUrl = msg.image.imageUri;
+        if (msg.payload?.fields?.image_url) imageUrl = msg.payload.fields.image_url.stringValue;
+        if (msg.card?.imageUri) imageUrl = msg.card.imageUri;
       }
     }
 
-    res.json({ message: responseText, image_url: imageUrl, intent: result.intent.displayName });
+    res.json({ message: result.fulfillmentText, image_url: imageUrl, intent: result.intent.displayName });
   } catch (error) {
     console.error('Error:', error);
-    res.status(500).json({ error: 'Failed to process request', details: error.message });
+    res.status(500).json({ error: 'Failed', details: error.message });
   }
 });
 
