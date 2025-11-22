@@ -203,11 +203,43 @@ function handleQuizComplete(sessionId) {
   };
 }
 
+// NEW: Handle quiz cancellation
+function handleQuizCancel(sessionId) {
+  if (quizSessions[sessionId]) {
+    const quizData = quizSessions[sessionId];
+    const answeredCount = quizData.currentQuestion;
+    const score = quizData.score;
+    
+    delete quizSessions[sessionId];
+    
+    console.log(`Quiz cancelled for session: ${sessionId}. Answered: ${answeredCount}, Score: ${score}`);
+  }
+  
+  return {
+    message: 'Quiz cancelled.',
+    image_url: null,
+    intent: 'quiz.cancelled'
+  };
+}
+
 app.post('/chat', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
     console.log(`Received: "${message}" | Session: ${sessionId}`);
     
+    // NEW: Handle quiz cancellation
+    if (message.toLowerCase() === 'cancel_quiz') {
+      if (isQuizActive(sessionId)) {
+        return res.json(handleQuizCancel(sessionId));
+      }
+      return res.json({ 
+        message: 'No active quiz to cancel.', 
+        image_url: null, 
+        intent: 'quiz.no_active' 
+      });
+    }
+    
+    // Check if user wants to start quiz
     const quizKeywords = ['quiz', 'test', 'take quiz', 'start quiz', 'quiz mode'];
     const isQuizRequest = quizKeywords.some(k => message.toLowerCase().includes(k));
     
@@ -215,6 +247,7 @@ app.post('/chat', async (req, res) => {
       return res.json(await handleQuizStart(sessionId));
     }
     
+    // Handle quiz answers
     if (isQuizActive(sessionId)) {
       const quizResponse = handleQuizAnswer(message, sessionId);
       if (quizResponse) return res.json(quizResponse);
